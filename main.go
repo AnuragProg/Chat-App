@@ -2,9 +2,9 @@ package main
 
 import (
 	"os"
-	"log"
 	"fmt"
 	"chat-app/server"
+	"chat-app/api"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
@@ -16,6 +16,14 @@ var s *server.Server = server.NewServer()
 
 func setupRouter() *gin.Engine{
 	router := gin.Default()
+
+
+	// loadBalancer (format = https://url:port, http://url:port)
+	loadBalancer := os.Getenv("LOADBALANCER")
+	fmt.Println("Load balancer => ", loadBalancer)
+	if loadBalancer == ""{
+		panic("Counldn't find load balancer url")
+	}
 
 	router.GET("/", func(c *gin.Context) {
 		room := c.Query("room")
@@ -30,6 +38,7 @@ func setupRouter() *gin.Engine{
 			return
 		}
 		defer func(){
+			go api.LoadReleased(loadBalancer)
 			s.RemoveUser(ws)
 			ws.Close()
 		}()
@@ -47,10 +56,21 @@ func setupRouter() *gin.Engine{
 	return router
 }
 
-func main(){
+func init(){
 	if err:= godotenv.Load(); err != nil{
-		log.Fatal("couldn't load env file")		
+		// log.Fatal("couldn't load env file")		
+		fmt.Println("couldn't load env file")
+
 	}	
+	go api.AddServer(os.Getenv("LOADBALANCER"))
+}
+
+func main(){
 	router := setupRouter()
-	router.Run(fmt.Sprintf(":%v", os.Getenv("PORT")))
+	defer func(){
+		go api.RemoveServer(os.Getenv("LOADBALANCER"))
+	}()
+	port := os.Getenv("PORT")
+	// fmt.Println("Port is ", port)
+	router.Run(fmt.Sprintf(":%v", port))
 }
