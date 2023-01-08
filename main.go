@@ -11,34 +11,34 @@ import (
 )
 
 var upgrader = websocket.Upgrader{}
-
 var s *server.Server = server.NewServer()
+
+// To be extracted from env file
+var load_balancer string
+var port string
+var server_url string
+
 
 func setupRouter() *gin.Engine{
 	router := gin.Default()
 
-
-	// loadBalancer (format = https://url:port, http://url:port)
-	loadBalancer := os.Getenv("LOADBALANCER")
-	fmt.Println("Load balancer => ", loadBalancer)
-	if loadBalancer == ""{
-		panic("Counldn't find load balancer url")
-	}
-
 	router.GET("/", func(c *gin.Context) {
 		room := c.Query("room")
+		fmt.Println("Room is => ", room)
 		if room == ""{
+			fmt.Println("couldn't find room in query param")
 			c.AbortWithStatus(404)
 			return
 		}
 
 		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil{
+			fmt.Println(err.Error())
 			c.AbortWithStatus(404)
 			return
 		}
 		defer func(){
-			go api.LoadReleased(loadBalancer)
+			go api.LoadReleased(load_balancer, server_url)
 			s.RemoveUser(ws)
 			ws.Close()
 		}()
@@ -48,6 +48,7 @@ func setupRouter() *gin.Engine{
 		for{
 			mt, message, err := ws.ReadMessage()
 			if err != nil{
+				fmt.Println(err.Error())
 				break;
 			}
 			go s.SendMsg(mt, string(message), room, ws)
@@ -62,15 +63,17 @@ func init(){
 		fmt.Println("couldn't load env file")
 
 	}	
-	go api.AddServer(os.Getenv("LOADBALANCER"))
+	load_balancer = os.Getenv("LOADBALANCER")
+	port = os.Getenv("PORT")
+	server_url = os.Getenv("SERVERURL")
+	go api.AddServer(load_balancer, server_url)
 }
 
 func main(){
 	router := setupRouter()
 	defer func(){
-		go api.RemoveServer(os.Getenv("LOADBALANCER"))
+		go api.RemoveServer(load_balancer, port)
 	}()
-	port := os.Getenv("PORT")
 	// fmt.Println("Port is ", port)
 	router.Run(fmt.Sprintf(":%v", port))
 }
